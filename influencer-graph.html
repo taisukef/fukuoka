@@ -1,0 +1,109 @@
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<style>
+body {
+	text-align: center;
+}
+a {
+	color: gray !important;
+}
+</style>
+</head><body>
+<h1>福岡市のインフルエンザ報告数オープンデータ</h1>
+<script type="module">
+
+import { fetchDiseaseDataFukuoka } from "./fetchDiseaseDataFukuoka.js";
+import Chart from "https://code4sabae.github.io/kafumon/lib/Chart.mjs";
+
+
+const fix0 = (n) => n.toString().length === 1 ? "0" + n : n;
+const fixS = (n) => n.toString().length === 1 ? " " + n : n;
+
+const convertInfData = (list) => {
+	const res = [];
+	let cnt = 0;
+	let bkday = null;
+	for (let i = 1; i < list.length; i++) {
+		const l = list[i];
+		const day = l[3] + "/" + fix0(l[4]) + "(" + fix0(l[5]) + "w)";
+		if (bkday !== day) {
+			res.push([day, cnt]);
+			cnt = 0;
+		}
+		bkday = day;
+		cnt += l[6] === "-" ? 0 : parseFloat(l[6]);
+	}
+	if (bkday !== null) {
+		res.push([bkday, cnt]);
+	}
+	return res;
+};
+
+const showChart = (chart, data) => {
+	const labels = [];
+	const startw = 24;
+	const lenw = 53;
+	for (let i = 1; i <= lenw; i++) {
+		let n = startw + i - 1;
+		if (n > lenw) {
+			n -= lenw;
+		}
+		const m = Math.floor((12 * (n - 1) / 52) + 1);
+		labels.push(fixS(m) + "月 " + fix0(n) + "w");
+	}
+	const datasets = [];
+	let bkyear = null;
+	let data1 = [];
+	const nowy = new Date().getFullYear();
+	for (let y = nowy; y >= 2015; y--) {
+		const data1 = [];
+		for (let i = 0; i < labels.length; i++) {
+			const l = labels[i];
+			const w = l.substring(l.lastIndexOf(" ") + 1);
+			let y2 = parseInt(w, 10) < startw ? y + 1: y;
+			const d = data.find((d) => d[0].indexOf(y2 + "/") >= 0 && d[0].indexOf(w) >= 0);
+			data1.push(d ? d[1] : null);
+		}
+		const hue = 360 / 8 * (nowy - y);
+		const borderColor = `hsla(${hue},60%,50%,100%)`;
+		datasets.push({ type: "line", label: y, fill: false, borderColor, lineTension: 0, data: data1 });
+	}
+  const config = {
+    data: { labels, datasets },
+    options: {
+      // title: { display: true, text: "福岡市のインフルエンザ発生数" },
+      scales: {
+        xAxes: [{ scaleLabel: { display: false, labelString: "日付" } }],
+        yAxes: [{ scaleLabel: { display: true, labelString: "定点あたりの患者数合計" }, ticks: { beginAtZero: true } }],
+      },
+      legend: { display: true }
+    }
+  };
+
+	/*
+  parent.style.display = "block";
+  parent.style.marginBottom = ".5em";
+
+	const chart = document.createElement("canvas");
+	parent.appendChild(chart);
+	*/
+  chart.width = 600;
+  chart.height = 320;
+  new Chart.Chart(chart, config);
+};
+
+window.onload = async () => {
+	const list = await fetchDiseaseDataFukuoka();
+	console.log(list);
+	const infdata = convertInfData(list);
+	console.log(infdata);
+	showChart(canvas, infdata);
+
+};
+</script>
+<canvas id="canvas"></canvas>
+<div>
+	Data: CC BY <a href=https://ckan.open-governmentdata.org/dataset/influenza401307fukuoka/resource/c95829ac-c4c3-4b56-9f09-90a9377218ac>インフルエンザ報告数 - インフルエンザ報告数 - 自治体オープンデータのCKAN</a><br>
+	Related: 関連アプリ「<a href=influencer.html>福岡感染症レポート</a>」<br>
+	App: CC BY <a href=https://fukuno.jig.jp/3002>福野泰介の一日一創</a><br>
+</div>
+</body><html>

@@ -1,0 +1,96 @@
+
+<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width"/>
+	
+<title>福岡県荒尾市のGDP</title>
+
+<link rel="apple-touch-icon" href="https://fukuno.jig.jp/app/fukuoka/gdp.png">
+<meta property="og:image" content="https://fukuno.jig.jp/app/fukuoka/gdp.png">
+
+<script type="module">
+import { CSV } from "https://code4sabae.github.io/js/CSV.js";
+import Chart from "https://code4sabae.github.io/kafumon/lib/Chart.mjs";
+
+const pref = "福岡県";
+const city = "荒尾市";
+const year = 2011;
+const csvurl = "./arao_fukuoka.csv";
+
+const roundYenK = (n) => {
+	console.log(n);
+	if (n > 100000) {
+		return (n / 100000).toFixed(1) + "億円";
+	} else {
+		return (n / 10).toFixed(1) + "万円";
+	}
+};
+
+window.onload = async () => {
+	const csv = await CSV.fetch(csvurl);
+	const json = CSV.toJSON(csv);
+	
+	const data = [];
+	for (const d of json) {
+		if (d.都道府県 !== pref || d.市区町村 !== city || d.データ名 !== "総生産額" || d.分類1 !== "分野別" || d.年度 != year) {
+			continue;
+		}
+		data.push({ label: d.分類3, value: parseInt(d.データ値) / 100000 });
+	}
+	data.sort((a, b) => {
+		return b.value - a.value;
+	});
+	const backgroundColor = [];
+	for (let i = 0; i < data.length; i++) {
+		backgroundColor[i] = `hsl(${i / data.length * 350},80%,60%)`;
+	}
+	const config = {
+		type: "pie",
+		data: { labels: data.map(d => d.label), datasets: [{ data: data.map(d => d.value), backgroundColor }] },
+	};
+	new Chart.Chart(canvas, config);
+
+	const total = json.filter(d => d.都道府県 === pref && d.市区町村 === city && d.データ名 == "総生産額" && d.分類1 == "" && d.年度 == year)[0].データ値;
+	const people = json.filter(d => d.都道府県 === pref && d.市区町村 === city && d.データ名 == "人口" && d.分類1 == "" && d.年度 == year)[0].データ値;
+	const perp = total / people;
+	caption.textContent = year + "年度 " + pref + city + "のGDP: " + roundYenK(total) + " 一人あたりGDP: " + roundYenK(perp) + "（人口: " + people + "人)";
+};
+
+</script>
+<style>
+
+body {
+	margin: 0;
+	font-family: sans-serif;
+	text-align: center;
+	background-color: #fff;
+}
+h1 {
+	font-size: 5vw;
+	margin: 0;
+	color: brown;
+}
+.credit {
+	margin: 1em;
+	font-size: 90%;
+}
+a {
+	color: gray !important;
+}
+
+</style></head><body>
+
+<h1>福岡県荒尾市のGDP</h1>
+<canvas id="canvas"></canvas>
+<div>分野別 1年間の総生産額/GDP（単位: 億円）</div>
+<div id="caption"></div>
+<div>
+
+<div class=credit>
+APP: CC BY <a href=https://fukuno.jig.jp/3069>一日一創 - fukuno.jig.jp</a><br>
+DATA: CC BY <a href=https://www.city.arao.lg.jp/q/aview/298/425.html>市内総生産　市民所得(分配)の状況｜荒尾市 - オープンデータ</a>
+</div>
+
+<script type='module' src="https://code4sabae.github.io/leaflet-mjs/qr-code.mjs"></script>
+<qr-code></qr-code>
+
+</body></html>

@@ -1,0 +1,244 @@
+
+<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width"/>
+	
+<title>福岡感染症レポート</title>
+
+<link rel="apple-touch-icon" href="influencer.jpg"/>
+<meta property="og:image" content="influencer.jpg"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.4.0/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.4.0/dist/leaflet.js"></script>
+<script src="https://code4fukui.github.io/egmapjs/egmap.js"></script>
+<link rel="stylesheet" href="https://code4fukui.github.io/egmapjs/egmap.css"/>
+<script src="https://fukuno.jig.jp/fukuno2.js"></script>
+<script src="https://code4fukui.github.io/egmapjs/sparql.js"></script>
+<script>"use strict"
+
+
+// util
+const getByName = function(arjson, name) {
+	for (const d of arjson) {
+		if (d['https://schema.org/name'] == name)
+			return d
+	}
+	return null
+}
+const trimCSV = function(csv) {
+	for (let i = 0; i < csv.length; i++) {
+		for (let j = 0; j < csv[i].length; j++) {
+			csv[i][j] = csv[i][j].trim()
+		}
+	}
+}
+const getLatest1 = function(csv, area) {
+	let line = null
+	let n = 0
+	for (let i = 1; i < csv.length; i++) {
+		if (csv[i][2] == area) {
+			let m = parseInt(csv[i][3]) * 100 + parseInt(csv[i][4])
+			if (m > n) {
+				n = m
+				line = csv[i]
+			}
+		}
+	}
+	return line
+}
+const getAreas = function(csv) {
+	const areas = []
+	for (let i = 1; i < csv.length; i++) {
+		const area = csv[i][2]
+		if (areas.indexOf(area) < 0)
+			areas.push(area)
+	}
+	return areas
+}
+const getLatest = function(csv) {
+	const areas = getAreas(csv)
+	const res = []
+	res.push(csv[0])
+	for (let i = 0; i < areas.length; i++) {
+		res.push(getLatest1(csv, areas[i]))
+	}
+	return res
+}
+const margeCSV = function(csvarray) {
+	const res = []
+	const head = []
+	for (let i = 0; i < csvarray.length; i++) {
+		const csv1 = csvarray[i][0]
+		for (let j = 0; j < csv1.length; j++) {
+			if (head.indexOf(csv1[j]) == -1)
+				head.push(csv1[j])
+		}
+	}
+	res.push(head)
+	for (let i = 0; i < csvarray.length; i++) {
+		const csv1 = csvarray[i]
+		const head1 = csv1[0]
+		for (let j = 1; j < csv1.length; j++) {
+			const line = []
+			const d = csv1[j]
+			for (let k = 0; k < head.length; k++) {
+				const n = head1.indexOf(head[k])
+				line.push(n < 0 ? "" : d[n])
+			}
+			res.push(line)
+		}
+	}
+	return res
+}
+const getCSVFiltered = function(csv, filter) {
+	const res = []
+	res.push(csv[0])
+	for (let i = 1; i < csv.length; i++) {
+		let flg = false
+		for (let j = 0; j < csv[i].length; j++) {
+			//if (csv[i][j].indexOf(filter) >= 0) {
+			if (csv[i][j] == filter) {
+				flg = true
+				break
+			}
+		}
+		if (!flg)
+			continue
+		res.push(csv[i])
+	}
+	return res
+}
+const makeTableFromCSV = function(csv) {
+	const tbl = create("table")
+	for (let i = 0; i < csv.length; i++) {
+		const tr = create("tr")
+		for (let j = 0; j < csv[i].length; j++) {
+			const td = create(i == 0 ? "th" : "td")
+			td.textContent = csv[i][j]
+			tr.appendChild(td)
+		}
+		tbl.appendChild(tr)
+	}
+	return tbl
+}
+const getCSVTransposition = function(csv) {
+	const res = []
+	for (let i = 0; i < csv[0].length; i++) {
+		const line = []
+		for (let j = 0; j < csv.length; j++) {
+			line.push(csv[j][i])
+		}
+		res.push(line)
+	}
+	return res
+}
+const makeTableFromCSVT = function(csv) {
+	return makeTableFromCSV(getCSVTransposition(csv))
+}
+
+/*
+東区役所	33.617340,130.417679
+博多区役所	33.591431,130.415039
+中央区役所	33.589514,130.392826
+南区役所	33.562050,130.426619
+城南区役所	33.575499,130.370482
+早良区役所	33.581470,130.348724
+西区役所	33.583080,130.323502
+
+401307,福岡市,東区,2020,1,3,10.22,-,7.2,0.2
+401307,福岡市,博多区,2020,1,3,13.14,0.5,4.5,0.5
+401307,福岡市,中央区,2020,1,3,14.5,0.67,7.33,0.67
+401307,福岡市,南区,2020,1,3,16.44,1,4.8,0.6
+401307,福岡市,城南区,2020,1,3,37.6,1.67,4.33,0.33
+401307,福岡市,早良区,2020,1,3,79.88,1.8,7,0.2
+401307,福岡市,西区,2020,1,3,16.29,-,9.5,-
+*/
+
+const fetchCSVInfectionReportFukuoka = async function() {
+	// 北九州市
+	// 自治体コード,自治体名,地点名,年,週,インフルエンザ,ＲＳウイルス感染症,咽頭結膜熱,Ａ群溶血性レンサ球菌咽頭炎,感染性胃腸炎,水痘,手足口病,伝染性紅斑,突発性発しん,ヘルパンギーナ,流行性耳下腺炎,急性出血性結膜炎,流行性角結膜炎,細菌性髄膜炎,無菌性髄膜炎,マイコプラズマ肺炎,クラミジア肺炎,感染性胃腸炎（ロタウイルス）
+	const csvurl2 = 'https://ckan.open-governmentdata.org/dataset/7dea7152-5bdf-46c0-8687-2d06ee97c83e/resource/dbccc8fe-ff34-40da-8392-2edea541f6e3/download/401005_kansensyohasseidoko_teitenhokoku.csv'
+	const kitakyu = convertCSVtoArray(await fetchViaProxy(csvurl2, 'SJIS'))
+	trimCSV(kitakyu)
+	console.log(kitakyu)
+	const l1 = getLatest(kitakyu)
+	console.log(l1)
+
+	// 福岡市
+	// 自治体コード,自治体名,地点名,年,月,週,（インフルエンザ）,（咽頭結膜熱）,（感染性胃腸炎）,（手足口病）
+	const csvurl1 = 'https://ckan.open-governmentdata.org/dataset/32cc4331-2ab4-489b-92c5-8dd14afe65f8/resource/a08c4052-fb8a-46c7-8241-870d5c511b71/download/teiten4syu.csv'
+	const fukuoka = convertCSVtoArray(await fetchViaProxy(csvurl1, 'SJIS'))
+	const normalizeHeader = function(csv) {
+		csv[0] = csv[0].map((e) => e.startsWith('（') ? e.substring(1, e.length - 1) : e)
+	}
+	normalizeHeader(fukuoka)
+	console.log(fukuoka)
+	const l2 = getLatest(fukuoka)
+	console.log(l2)
+
+	const list = margeCSV([ l1, l2 ])
+	console.log(list)
+	return list
+}
+/*
+const fetchPOIFukuoka = async function() {
+	// geocoding
+	const key_poi_fukuoka = '2PACX-1vR8zTlytHrmYcbSdNt_ObQJ4VsdOLr3lLEsdgKWk_sADqdS_92P5ag08Klfit5cRzM6I7oaUwj3X_4P'
+	const poi_fukuoka = await fetchGoogleSpreadSheet(key_poi_fukuoka)
+	//console.log(poi_fukuoka)
+	return poi_fukuoka
+}
+*/
+const fetchPOIFukuoka = async () => {
+	const scsv = await (await fetch("poi_fukuoka.csv")).text();
+	const csv = convertCSVtoArray(scsv);
+	const json = csv2json(csv);
+	return json;
+}
+
+// main
+window.onload = async function() {
+	// show table
+	const data_inf = await fetchCSVInfectionReportFukuoka()
+	list.appendChild(makeTableFromCSVT(data_inf))
+
+	// mapping
+	const areas = getAreas(data_inf)
+	const poi_fukuoka = await fetchPOIFukuoka()
+	const map = initMap('mapid')
+	const lls = []
+	for (const area of areas) {
+		const poi = getByName(poi_fukuoka, area + "役所")
+		const ll = poi['https://schema.org/geo'].split(',')
+		const icon = map.addIcon(ll[0], ll[1], poi['https://schema.org/name'])
+		let html = `<h2>${poi['https://schema.org/name']}</h2>`
+		html += makeTableFromCSVT(getCSVFiltered(data_inf, area)).outerHTML
+		icon.bindPopup(html, {	maxWidth: 500, maxHeight: 200 })
+		lls.push(ll)
+	}
+	map.fitBounds(lls)
+}
+
+</script>
+<style>
+
+body { margin: 0; font-family: sans-serif; text-align: center; background-color: #fff; }
+h1 { font-size: 5vw; margin: 0; color: brown; }
+h2 { font-size: 2.5vw; margin: .2em; }
+td, th { border: 1px solid black; text-align: center; }
+table { border-collapse: collapse; display: inline-block; margin-top: 1em; background-color: white; }
+#mapid { height: 50vh; }
+
+</style></head><body>
+
+<h1>福岡感染症レポート</h1>
+<div id="mapid"></div>
+<div id="list"></div>
+
+<img id=qrcode><script>addEventListener("load", () => qrcode.src = "https://chart.apis.google.com/chart?chs=140x140&cht=qr&chl=" + encodeURIComponent(document.location))</script><br>
+
+APP: CC BY <a href=https://fukuno.jig.jp/2746>fukuno.jig.jp</a><br>
+DATA: CC BY <a href=https://ckan.open-governmentdata.org/dataset/401307_kansensyou_4syu/resource/a08c4052-fb8a-46c7-8241-870d5c511b71>福岡市 感染症報告数</a>, 
+CC BY <a href=https://ckan.open-governmentdata.org/dataset/401005_kansensyohasseidoko_teitenhokoku/resource/dbccc8fe-ff34-40da-8392-2edea541f6e3>北九州市 感染症発生動向（定点報告）</a>,
+CC BY <a href=https://maps.gsi.go.jp/>国交省 地理院地図</a><br>
+LIB: <a href=https://github.com/code4fukui/egmapjs>egmapjs</a> CC BY<br>
+
+</body></html>
